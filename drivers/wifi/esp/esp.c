@@ -698,13 +698,13 @@ static void esp_init_work(struct k_work *work)
 		SETUP_CMD_NOHANDLE("AT"),
 		/* turn off echo */
 		SETUP_CMD_NOHANDLE("ATE0"),
-#if defined(CONFIG_WIFI_ESP_AT_VERSION_2_0)
-		SETUP_CMD_NOHANDLE("AT+CWAUTOCONN=0"),
-#endif
 		SETUP_CMD_NOHANDLE("AT+UART_CUR="_UART_CUR),
 		/* enable multiple socket support */
 		SETUP_CMD_NOHANDLE("AT+CIPMUX=1"),
 		SETUP_CMD_NOHANDLE("AT+"_CWMODE"=1"),
+#if defined(CONFIG_WIFI_ESP_AT_VERSION_2_0)
+		SETUP_CMD_NOHANDLE("AT+CWAUTOCONN=0"),
+#endif
 		/* only need ecn,ssid,rssi,channel */
 		SETUP_CMD_NOHANDLE("AT+CWLAPOPT=0,23"),
 #if defined(CONFIG_WIFI_ESP_PASSIVE_TCP)
