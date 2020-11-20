@@ -30,12 +30,23 @@ static int wifi_connect(uint32_t mgmt_request, struct net_if *iface,
 	LOG_HEXDUMP_DBG(params->psk, params->psk_length, "psk");
 	NET_DBG("ch %u sec %u", params->channel, params->security);
 
+#if CONFIG_NET_L2_WIFI_ENTERPRISE
+	if ((params->security > WIFI_SECURITY_TYPE_802_1X) ||
+#else
 	if ((params->security > WIFI_SECURITY_TYPE_PSK) ||
+#endif
 	    (params->ssid_length > WIFI_SSID_MAX_LEN) ||
 	    (params->ssid_length == 0U) ||
 	    ((params->security == WIFI_SECURITY_TYPE_PSK) &&
 	     ((params->psk_length < 8) || (params->psk_length > 64) ||
 	      (params->psk_length == 0U) || !params->psk)) ||
+#if CONFIG_NET_L2_WIFI_ENTERPRISE
+	    ((params->security == WIFI_SECURITY_TYPE_802_1X) &&
+	     ((params->eap_mode > WIFI_EAP_MODE_PEAP_MSCHAPV2) || 
+		  (params->identity_length > 256) ||
+		  (params->username_length > 256) ||
+		  (params->password_length > 256))) ||
+#endif
 	    ((params->channel != WIFI_CHANNEL_ANY) &&
 	     (params->channel > WIFI_CHANNEL_MAX)) ||
 	    !params->ssid) {

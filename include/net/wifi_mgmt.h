@@ -14,6 +14,9 @@
 
 #include <net/net_mgmt.h>
 #include <net/wifi.h>
+#if CONFIG_NET_L2_WIFI_ENTERPRISE
+#include <net/tls_credentials.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -99,6 +102,20 @@ struct wifi_connect_req_params {
 
 	uint8_t *psk;
 	uint8_t psk_length; /* Min 8 - Max 64 */
+
+#if CONFIG_NET_L2_WIFI_ENTERPRISE
+	uint8_t *identity;
+	uint8_t identity_length; /* Max 256 */
+
+	uint8_t *username;
+	uint8_t username_length; /* Max 256 */
+
+	uint8_t *password;
+	uint8_t password_length; /* Max 256 */
+
+	sec_tag_t client_certificate;
+	enum wifi_eap_mode eap_mode;
+#endif
 
 	uint8_t channel;
 	enum wifi_security_type security;

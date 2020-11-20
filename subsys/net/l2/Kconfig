@@ -92,6 +92,13 @@ module-help = Enables Wi-Fi management interface to output debug messages.
 source "subsys/net/Kconfig.template.log_config.net"
 endif # NET_L2_WIFI_MGMT
 
+config NET_L2_WIFI_ENTERPRISE
+	bool "Enable WPA2 Enterprise Authentication Wi-Fi"
+	depends on TLS_CREDENTIALS
+	help
+	  Add support to supply credentials needed for WPA2 Enterprise.
+	  Wi-Fi drivers must support enterprise.
+
 config NET_L2_WIFI_SHELL
 	bool "Enable Wi-Fi shell module"
 	select NET_L2_WIFI_MGMT

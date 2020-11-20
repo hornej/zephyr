@@ -8,6 +8,7 @@
 #define LOG_LEVEL CONFIG_WIFI_LOG_LEVEL
 
 #include <logging/log.h>
+#include <logging/log_ctrl.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <zephyr.h>
@@ -22,6 +23,11 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <net/net_context.h>
 #include <net/net_offload.h>
 #include <net/wifi_mgmt.h>
+#if CONFIG_NET_L2_WIFI_ENTERPRISE
+#include "tls_internal.h"
+#include <mbedtls/pk.h>
+#include <mbedtls/platform.h>
+#endif
 
 #include <sys/printk.h>
 
@@ -35,6 +41,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define HOSTNAME_MAX_SIZE	(64)
 
 #include <driver/include/m2m_wifi.h>
+#include <spi_flash/include/spi_flash.h>
+#include <spi_flash/include/spi_flash_map.h>
 #include <socket/include/m2m_socket_host_if.h>
 
 NMI_API void socketInit(void);
@@ -976,46 +984,156 @@ static int winc1500_mgmt_scan(const struct device *dev, scan_result_cb_t cb)
 	return 0;
 }
 
+/**
+ * The WINC1500 requires the RSA Private Key to be converted to the raw modulus and exponent arrays.
+ */
+static int winc1500_rsa_key(const void *src, size_t src_length, uint8_t *p_modulus, uint8_t* p_exponent, size_t *p_keylength)
+{
+	int ret;
+	struct mbedtls_pk_context pk_ctx;
+	mbedtls_mpi modulus, exponent;
+	mbedtls_pk_init(&pk_ctx);
+	mbedtls_mpi_init(&modulus);
+	mbedtls_mpi_init(&exponent);
+
+	ret = mbedtls_pk_parse_key(&pk_ctx, src, src_length, NULL, 0);
+	if (ret != 0 || (mbedtls_pk_get_type(&pk_ctx) != MBEDTLS_PK_RSA)) {
+		ret = -EINVAL;
+		goto abort;
+	}
+
+	ret = mbedtls_rsa_export(mbedtls_pk_rsa(pk_ctx), &modulus, NULL, NULL,
+				 &exponent, NULL);
+	if (ret != 0) {
+		ret = -EINVAL;
+		goto abort;
+	}
+
+	ret = mbedtls_mpi_write_binary(&modulus, p_modulus, *p_keylength);
+	if (ret != 0) {
+		ret = -EINVAL;
+		goto abort;
+	}
+
+	ret = mbedtls_mpi_write_binary(&exponent, p_exponent, *p_keylength);
+	if (ret != 0) {
+		ret = -EINVAL;
+		goto abort;
+	}
+
+abort:
+	mbedtls_mpi_free(&modulus);
+	mbedtls_mpi_free(&exponent);
+	mbedtls_pk_free(&pk_ctx);
+	return ret;
+}
+
 static int winc1500_mgmt_connect(const struct device *dev,
 				 struct wifi_connect_req_params *params)
 {
 	uint8_t ssid[M2M_MAX_SSID_LEN];
-	tuniM2MWifiAuth psk;
+	uint8_t psk[M2M_MAX_PSK_LEN];
 	uint8_t security;
 	uint16_t channel;
 	void *auth;
 
 	memcpy(ssid, params->ssid, params->ssid_length);
 	ssid[params->ssid_length] = '\0';
-
-	if (params->security == WIFI_SECURITY_TYPE_PSK) {
-		memcpy(psk.au8PSK, params->psk, params->psk_length);
-		psk.au8PSK[params->psk_length] = '\0';
-		auth = &psk;
-
-		security = M2M_WIFI_SEC_WPA_PSK;
-	} else {
-		auth = NULL;
-		security = M2M_WIFI_SEC_OPEN;
-	}
-
+	
 	if (params->channel == WIFI_CHANNEL_ANY) {
 		channel = M2M_WIFI_CH_ALL;
 	} else {
 		channel = params->channel;
 	}
 
-	LOG_DBG("Connecting to %s (%u) on %s %u %s security (%s)",
-		ssid, params->ssid_length,
-		channel == M2M_WIFI_CH_ALL ? "channel unknown" : "channel",
-		channel,
-		security == M2M_WIFI_SEC_OPEN ? "without" : "with",
-		params->psk ? (char *)psk.au8PSK : "");
+	if (0) {
+#if CONFIG_NET_L2_WIFI_ENTERPRISE
+	} else if (params->security == WIFI_SECURITY_TYPE_802_1X) {
+		int ret = 0;
+		if (params->eap_mode == WIFI_EAP_MODE_TLS || WIFI_EAP_PHASE2(params->eap_mode) == WIFI_EAP_TLS) {
+			struct tls_credential *tlscert, *tlskey;
+			const void *cert;
+			uint8_t key_modulus[256], key_exponent[256];
+			size_t key_length = 256, cert_length;
+			
+			credentials_lock();
+			tlscert = credential_get(params->client_certificate, TLS_CREDENTIAL_CLIENT_CERTIFICATE);
+			tlskey = credential_get(params->client_certificate, TLS_CREDENTIAL_PRIVATE_KEY);
+			if (tlscert == NULL || tlskey == NULL) {
+				ret = -EINVAL;
+				goto abort;
+			}
 
-	if (m2m_wifi_connect((char *)ssid, params->ssid_length,
-			     security, auth, channel)) {
-		return -EIO;
+#if CONFIG_TLS_CREDENTIAL_FILENAMES
+			void *key_data = mbedtls_calloc(file_size, 4);
+			if (key_data == NULL) {
+				ret = -ENOMEM;
+				goto pk_ctx_abort;
+			}
+			ret = winc1500_rsa_key(key_data, file_size, key_modulus, key_exponent, &key_length);
+			mbedtls_free(key_data);
+#else
+			cert = tlscert->buf;
+			cert_length = tlscert->len;
+			ret = winc1500_rsa_key(tlskey->buf, tlskey->len, key_modulus, key_exponent, &key_length);
+#endif
+
+			tstrAuth1xTls auth1x;
+			auth1x.pu8Domain = NULL;
+			auth1x.u16DomainLen = 0;
+			auth1x.pu8UserName = params->username;
+			auth1x.u16UserNameLen = params->username_length;
+			auth1x.pu8Certificate = (uint8_t *)cert;
+			auth1x.u16CertificateLen = cert_length;
+			auth1x.pu8PrivateKey_Exp = key_exponent;
+			auth1x.pu8PrivateKey_Mod = key_modulus;
+			auth1x.u16PrivateKeyLen = key_length;
+			auth1x.bUnencryptedUserName = true;
+			auth1x.bPrependDomain = true;
+
+			tstrNetworkId netid;
+			netid.enuChannel = channel;
+			netid.pu8Ssid = ssid;
+			netid.u8SsidLen = params->ssid_length;
+			netid.pu8Bssid = NULL;
+
+			if (m2m_wifi_connect_1x_tls(WIFI_CRED_DONTSAVE, &netid, &auth1x)) {
+				ret = -EIO;
+			}
+abort:
+			credentials_unlock();
+			if (ret < 0) return ret;
+		} else if (WIFI_EAP_PHASE2(params->eap_mode) == WIFI_EAP_MSCHAPV2) {
+
+		} else {
+			return -EINVAL;
+		}
+#endif
+	} else {
+		if (params->security == WIFI_SECURITY_TYPE_PSK) {
+			memcpy(psk, params->psk, params->psk_length);
+			psk[params->psk_length] = '\0';
+			auth = psk;
+
+			security = M2M_WIFI_SEC_WPA_PSK;
+		} else {
+			auth = NULL;
+			security = M2M_WIFI_SEC_OPEN;
+		}
+
+		LOG_DBG("Connecting to %s (%u) on %s %u %s security (%s)",
+			log_strdup(ssid), params->ssid_length,
+			channel == M2M_WIFI_CH_ALL ? "channel unknown" : "channel",
+			channel,
+			security == M2M_WIFI_SEC_OPEN ? "without" : "with",
+			params->psk ? log_strdup(psk) : "");
+
+		if (m2m_wifi_connect(ssid, params->ssid_length,
+					security, auth, channel)) {
+			return -EIO;
+		}
 	}
+
 
 	w1500_data.connecting = true;
 
@@ -1067,6 +1185,7 @@ static int winc1500_init(const struct device *dev)
 
 	ARG_UNUSED(dev);
 
+
 	w1500_data.connecting = false;
 	w1500_data.connected = false;
 
@@ -1097,9 +1216,9 @@ static int winc1500_init(const struct device *dev)
 		LOG_ERR("Failed set power profile");
 	}
 
-	if (m2m_wifi_set_tx_power(TX_PWR_LOW) != M2M_SUCCESS) {
-		LOG_ERR("Failed set tx power");
-	}
+	// if (m2m_wifi_set_tx_power(TX_PWR_LOW) != M2M_SUCCESS) {
+	// 	LOG_ERR("Failed set tx power");
+	// }
 
 	/* monitoring thread for winc wifi callbacks */
 	k_thread_create(&winc1500_thread_data, winc1500_stack,

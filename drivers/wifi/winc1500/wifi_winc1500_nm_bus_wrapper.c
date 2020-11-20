@@ -8,6 +8,7 @@
 
 #define LOG_LEVEL CONFIG_WIFI_LOG_LEVEL
 #include <logging/log.h>
+#include <logging/log_ctrl.h>
 LOG_MODULE_REGISTER(winc1500);
 
 #include <stdio.h>

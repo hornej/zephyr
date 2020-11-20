@@ -60,7 +60,7 @@
    ---------------------------------
  */
 #include <stdio.h>
-#define CONF_WINC_DEBUG				(0)
+#define CONF_WINC_DEBUG				(1)
 #define CONF_WINC_PRINTF			printf
 
 #endif /* ZEPHYR_DRIVERS_WIFI_WINC1500_WIFI_WINC1500_CONFIG_H_ */
