@@ -36,109 +36,77 @@ static int mcp25xxfd_reset(const struct device *dev)
 	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
 }
 
-static int mcp25xxfd_readb(const struct device *dev, uint16_t address,
-			   void *rxd)
-{
-	uint8_t cmd_buf[3] = { (MCP25XXFD_OPCODE_READ << 4) +
-			       ((address >> 8) & 0xF),
-			       address & 0xFF };
-	uint8_t dbuf[3];
-	const struct spi_buf tx_buf = { .buf = cmd_buf, .len = 3 };
-	const struct spi_buf rx_buf = { .buf = dbuf, .len = 3 };
-	const struct spi_buf_set tx = { .buffers = &tx_buf, .count = 1 };
-	const struct spi_buf_set rx = { .buffers = &rx_buf, .count = 1 };
-	int ret;
-
-	ret = spi_transceive(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg,
-			     &tx, &rx);
-	memcpy(rxd, &dbuf[2], 1);
-	return ret;
-}
-
-static int mcp25xxfd_writeb(const struct device *dev, uint16_t address,
-			    void *txd)
-{
-	uint8_t cmd_buf[3] = { (MCP25XXFD_OPCODE_WRITE << 4) +
-			       ((address >> 8) & 0xF),
-			       address & 0xFF, ((uint8_t *)txd)[0] };
-	const struct spi_buf tx_buf = { .buf = cmd_buf, .len = 3 };
-	const struct spi_buf_set tx = { .buffers = &tx_buf, .count = 1 };
-
-	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
-}
-
-static int mcp25xxfd_readw(const struct device *dev, uint16_t address,
-			   void *rxd)
-{
-	uint8_t cmd_buf[6] = { (MCP25XXFD_OPCODE_READ << 4) +
-			       ((address >> 8) & 0xF),
-			       address & 0xFF };
-	uint8_t dbuf[6];
-	const struct spi_buf tx_buf = { .buf = cmd_buf, .len = 6 };
-	const struct spi_buf rx_buf = { .buf = dbuf, .len = 6 };
-	const struct spi_buf_set tx = { .buffers = &tx_buf, .count = 1 };
-	const struct spi_buf_set rx = { .buffers = &rx_buf, .count = 1 };
-	int ret;
-
-	ret = spi_transceive(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg,
-			     &tx, &rx);
-	memcpy(rxd, &dbuf[2], 4);
-	return ret;
-}
-
-static int mcp25xxfd_writew(const struct device *dev, uint16_t address,
-			    void *txd)
-{
-	uint8_t cmd_buf[6] = { (MCP25XXFD_OPCODE_WRITE << 4) +
-			       ((address >> 8) & 0xF),
-			       address & 0xFF,
-			       ((uint8_t *)txd)[0],
-			       ((uint8_t *)txd)[1],
-			       ((uint8_t *)txd)[2],
-			       ((uint8_t *)txd)[3] };
-	const struct spi_buf tx_buf = { .buf = cmd_buf, .len = 6 };
-	const struct spi_buf_set tx = { .buffers = &tx_buf, .count = 1 };
-
-	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
-}
-
 static int mcp25xxfd_read(const struct device *dev, uint16_t address, void *rxd,
 			  uint8_t rx_len)
 {
-	uint8_t cmd_buf[] = { (MCP25XXFD_OPCODE_READ << 4) +
-			      ((address >> 8) & 0xF),
-			      address & 0xFF };
+	uint8_t cmd_buf[2 + rx_len];
+	cmd_buf[0] = (MCP25XXFD_OPCODE_READ << 4) + ((address >> 8) & 0x0F);
+	cmd_buf[1] = address & 0xFF;
 	const struct spi_buf tx_buf[] = {
 		{ .buf = cmd_buf, .len = sizeof(cmd_buf) },
-		{ .buf = NULL, .len = rx_len },
 	};
 	const struct spi_buf rx_buf[] = {
-		{ .buf = NULL, .len = sizeof(cmd_buf) },
-		{ .buf = rxd, .len = rx_len },
+		{ .buf = cmd_buf, .len = sizeof(cmd_buf) },
 	};
 	const struct spi_buf_set tx = { .buffers = tx_buf,
 					.count = ARRAY_SIZE(tx_buf) };
 	const struct spi_buf_set rx = { .buffers = rx_buf,
 					.count = ARRAY_SIZE(rx_buf) };
+	int ret;
 
-	return spi_transceive(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx,
-			      &rx);
+	ret = spi_transceive(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg,
+				 &tx, &rx);
+	memcpy(rxd, &cmd_buf[2], rx_len);
+	if (ret < 0) {
+		LOG_ERR("Failed to read %d bytes from 0x%03x", rx_len, address);
+	}
+	return ret;
 }
 
 static int mcp25xxfd_write(const struct device *dev, uint16_t address,
 			   void *txd, uint8_t tx_len)
 {
-	uint8_t cmd_buf[] = { (MCP25XXFD_OPCODE_WRITE << 4) +
-			      ((address >> 8) & 0xF),
-			      address & 0xFF };
+	uint8_t cmd_buf[2 + tx_len];
+	cmd_buf[0] = (MCP25XXFD_OPCODE_WRITE << 4) +
+			      ((address >> 8) & 0xF);
+	cmd_buf[1] = address & 0xFF;
 	const struct spi_buf tx_buf[] = {
 		{ .buf = cmd_buf, .len = sizeof(cmd_buf) },
-		{ .buf = txd, .len = tx_len },
 	};
 	const struct spi_buf_set tx = { .buffers = tx_buf,
 					.count = ARRAY_SIZE(tx_buf) };
+	int ret;
+					
+	memcpy(&cmd_buf[2], txd, tx_len);					
+	ret = spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
+	if (ret < 0) {
+		LOG_ERR("Failed to write %d bytes to 0x%03x", tx_len, address);
+	}
+	return ret;
+}
 
-	return spi_write(DEV_DATA(dev)->spi, &DEV_DATA(dev)->spi_cfg, &tx);
+static inline int mcp25xxfd_readb(const struct device *dev, uint16_t address,
+			   void *rxd)
+{
+	return mcp25xxfd_read(dev, address, rxd, 1);
+}
+
+static inline int mcp25xxfd_writeb(const struct device *dev, uint16_t address,
+			    void *txd)
+{
+	return mcp25xxfd_write(dev, address, txd, 1);
+}
+
+static inline int mcp25xxfd_readw(const struct device *dev, uint16_t address,
+			   void *rxd)
+{
+	return mcp25xxfd_read(dev, address, rxd, 4);
+}
+
+static inline int mcp25xxfd_writew(const struct device *dev, uint16_t address,
+			    void *txd)
+{
+	return mcp25xxfd_write(dev, address, txd, 4);
 }
 
 static int mcp25xxfd_fifo_read(const struct device *dev, uint16_t fifo_address,
@@ -223,7 +191,7 @@ static void mcp25xxfd_zcanframe_to_txobj(const struct zcan_frame *src,
 #if defined(CONFIG_CAN_FD_MODE)
 	dst->FDF = src->fd;
 #endif
-	memcpy(dst->DATA, src->data, CAN_MAX_DLEN);
+	memcpy(dst->DATA, src->data, MIN(can_dlc_to_bytes(src->dlc), CAN_MAX_DLEN));
 }
 
 static void mcp25xxfd_rxobj_to_zcanframe(const struct mcp25xxfd_rxobj *src,
@@ -248,7 +216,7 @@ static void mcp25xxfd_rxobj_to_zcanframe(const struct mcp25xxfd_rxobj *src,
 #if defined(CONFIG_CAN_RX_TIMESTAMP)
 	dst->timestamp = src->RXMSGTS;
 #endif
-	memcpy(dst->data, src->DATA, MIN(src->DLC, CAN_MAX_DLEN));
+	memcpy(dst->data, src->DATA, MIN(can_dlc_to_bytes(src->DLC), CAN_MAX_DLEN));
 }
 
 static int mcp25xxfd_get_raw_mode(const struct device *dev, uint8_t *mode)
@@ -434,10 +402,17 @@ static int mcp25xxfd_send(const struct device *dev,
 			  can_tx_callback_t callback, void *callback_arg)
 {
 	struct mcp25xxfd_data *dev_data = DEV_DATA(dev);
-	uint8_t objbuf[sizeof(struct mcp25xxfd_txobj) + msg->dlc];
-	struct mcp25xxfd_txobj *object = (struct mcp25xxfd_txobj *)objbuf;
+	struct mcp25xxfd_txobj tx_frame;
 	uint8_t mailbox_idx = 0;
 	int ret;
+	
+	LOG_DBG("Sending %d bytes. Id: 0x%x, ID type: %s %s %s %s",
+		can_dlc_to_bytes(msg->dlc), msg->id,
+		msg->id_type == CAN_STANDARD_IDENTIFIER ?
+				  "standard" : "extended",
+		msg->rtr == CAN_DATAFRAME ? "" : "RTR",
+		msg->fd == CAN_DATAFRAME ? "" : "FD frame",
+		msg->brs == CAN_DATAFRAME ? "" : "BRS");
 
 	if (msg->dlc > CAN_MAX_DLC) {
 		LOG_ERR("DLC of %d exceeds maximum (%d)", msg->dlc,
@@ -462,10 +437,10 @@ static int mcp25xxfd_send(const struct device *dev,
 		return CAN_TX_ERR;
 	}
 
-	mcp25xxfd_zcanframe_to_txobj(msg, object);
-	object->SEQ = mailbox_idx;
-	ret = mcp25xxfd_fifo_write(dev, MCP25XXFD_REG_TXQCON, objbuf,
-				   sizeof(objbuf));
+	mcp25xxfd_zcanframe_to_txobj(msg, &tx_frame);
+	tx_frame.SEQ = mailbox_idx;
+	ret = mcp25xxfd_fifo_write(dev, MCP25XXFD_REG_TXQCON, &tx_frame,
+				   sizeof(struct mcp25xxfd_txobj));
 
 	if (ret >= 0) {
 		dev_data->mailbox[mailbox_idx].cb = callback;
@@ -594,19 +569,15 @@ static void mcp25xxfd_recover(const struct device *dev, k_timeout_t timeout)
 static void mcp25xxfd_rx(const struct device *dev, int fifo_idx)
 {
 	struct mcp25xxfd_data *dev_data = DEV_DATA(dev);
-	uint8_t msgbuf[sizeof(struct mcp25xxfd_rxobj) + CAN_MAX_DLEN];
-	struct mcp25xxfd_rxobj *rx_frame =
-		(struct mcp25xxfd_rxobj *)msgbuf;
+	struct mcp25xxfd_rxobj rx_frame;
 	struct zcan_frame msg;
-	int ret;
 
-	ret = mcp25xxfd_fifo_read(dev, MCP25XXFD_REG_FIFOCON(fifo_idx), msgbuf,
-				  sizeof(msgbuf));
-	if (ret >= 0) {
-		mcp25xxfd_rxobj_to_zcanframe(rx_frame, &msg);
-		if (dev_data->filter_usage & BIT(rx_frame->FILHIT)) {
-			dev_data->rx_cb[rx_frame->FILHIT](
-				&msg, dev_data->cb_arg[rx_frame->FILHIT]);
+	while(mcp25xxfd_fifo_read(dev, MCP25XXFD_REG_FIFOCON(fifo_idx), &rx_frame,
+				  sizeof(rx_frame)) >= 0) {
+		mcp25xxfd_rxobj_to_zcanframe(&rx_frame, &msg);
+		if (dev_data->filter_usage & BIT(rx_frame.FILHIT)) {
+			dev_data->rx_cb[rx_frame.FILHIT](
+				&msg, dev_data->cb_arg[rx_frame.FILHIT]);
 		}
 	}
 }
@@ -616,11 +587,8 @@ static void mcp25xxfd_tx_done(const struct device *dev)
 	struct mcp25xxfd_data *dev_data = DEV_DATA(dev);
 	struct mcp25xxfd_tefobj tefobj;
 	uint8_t mailbox_idx;
-	int ret;
-
-	ret = mcp25xxfd_fifo_read(dev, MCP25XXFD_REG_TEFCON, &tefobj,
-				  sizeof(tefobj));
-	if (ret >= 0) {
+	while(mcp25xxfd_fifo_read(dev, MCP25XXFD_REG_TEFCON, &tefobj,
+				  sizeof(tefobj)) >= 0) {
 		mailbox_idx = tefobj.SEQ;
 		if (dev_data->mailbox[mailbox_idx].cb == NULL) {
 			k_sem_give(&dev_data->mailbox[mailbox_idx].tx_sem);
@@ -685,6 +653,7 @@ static void mcp25xxfd_int_thread(const struct device *dev)
 						new_state = CAN_ERROR_ACTIVE;
 					}
 					if (dev_data->state != new_state) {
+						LOG_DBG("State %d -> %d (tx: %d, rx: %d)", dev_data->state, new_state, trec.TEC, trec.REC);
 						dev_data->state = new_state;
 						if (dev_data->state_change_isr) {
 							struct can_bus_err_cnt
@@ -893,13 +862,14 @@ static int mcp25xxfd_init(const struct device *dev)
 
 	union mcp25xxfd_con con;
 	union mcp25xxfd_int regint = { .word = 0x00000000 };
+	union mcp25xxfd_iocon iocon;
+	union mcp25xxfd_osc osc;
 	union mcp25xxfd_fifocon tefcon = { .word = 0x00000400 };
 	union mcp25xxfd_fifocon txqcon = { .word = 0x00600400 };
 	union mcp25xxfd_fifocon fifocon = { .word = 0x00600400 };
 
 	ret = mcp25xxfd_readw(dev, MCP25XXFD_REG_CON, &con);
 	if (ret < 0) {
-		LOG_ERR("Failed to read device configuration [%d]", ret);
 		goto done;
 	} else if (con.OPMOD != MCP25XXFD_OPMODE_CONFIGURATION) {
 		LOG_ERR("Device did not reset into configuration mode [%d]",
@@ -924,7 +894,31 @@ static int mcp25xxfd_init(const struct device *dev)
 	con.DNCNT = 0;
 	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_CON, con.byte);
 	if (ret < 0) {
-		LOG_ERR("Failed to write device configuration [%d]", ret);
+		goto done;
+	}
+
+	osc.PLLEN = 0;
+	osc.OSCDIS = 0;
+	osc.LPMEN = 0;
+	osc.SCLKDIV = 0;
+	osc.CLKODIV = dev_cfg->clko_div;
+	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_OSC, &osc.word);
+	if (ret < 0) {
+		goto done;
+	}
+
+	iocon.TRIS0 = 1;
+	iocon.TRIS1 = 1;
+	iocon.XSTBYEN = 0;
+	iocon.LAT0 = 0;
+	iocon.LAT1 = 0;
+	iocon.PM0 = 1;
+	iocon.PM1 = 1;
+	iocon.TXCANOD = 0;
+	iocon.SOF = dev_cfg->sof_on_clko ? 1 : 0;
+	iocon.INTOD = 0;
+	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_IOCON, &iocon.word);
+	if (ret < 0) {
 		goto done;
 	}
 
@@ -934,7 +928,6 @@ static int mcp25xxfd_init(const struct device *dev)
 	regint.CERRIE = 1;
 	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_INT, &regint);
 	if (ret < 0) {
-		LOG_ERR("Failed to write device configuration [%d]", ret);
 		goto done;
 	}
 
@@ -942,22 +935,20 @@ static int mcp25xxfd_init(const struct device *dev)
 	tefcon.FNEIE = 1;
 	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_TEFCON, &tefcon);
 	if (ret < 0) {
-		LOG_ERR("Failed to write tx queue configuration [%d]", ret);
 		goto done;
 	}
 
-	txqcon.PLSIZE = 0b000;
+	txqcon.PLSIZE = can_bytes_to_dlc(MCP25XXFD_PAYLOAD_SIZE) - 8;
 	txqcon.FSIZE = CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE - 1;
 	txqcon.TXPRI = 1;
 	txqcon.TXAT = 0b01;
 	txqcon.TXATIE = 1;
 	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_TXQCON, &txqcon);
 	if (ret < 0) {
-		LOG_ERR("Failed to write tx queue configuration [%d]", ret);
 		goto done;
 	}
 
-	fifocon.PLSIZE = 0b000;
+	fifocon.PLSIZE = can_bytes_to_dlc(MCP25XXFD_PAYLOAD_SIZE) - 8;
 	fifocon.FSIZE = MCP25XXFD_FIFO_LENGTH - 1;
 #if defined(CONFIG_CAN_RX_TIMESTAMP)
 	fifocon.TSEN = 1;
@@ -965,9 +956,12 @@ static int mcp25xxfd_init(const struct device *dev)
 	fifocon.FNEIE = 1;
 	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_FIFOCON(1), &fifocon);
 	if (ret < 0) {
-		LOG_ERR("Failed to write fifo configuration [%d]", ret);
 		goto done;
 	}
+
+	LOG_DBG("TEF/TXQ: %d elements", CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE);
+	LOG_DBG("RX FIFO: %ld elements", MCP25XXFD_FIFO_LENGTH);
+	LOG_DBG("%ldb of %db RAM Allocated", MCP25XXFD_TEF_SIZE + MCP25XXFD_TXQ_SIZE + MCP25XXFD_RXF_SIZE, MCP25XXFD_RAM_SIZE);
 
 done:
 	k_mutex_unlock(&dev_data->mutex);
@@ -1003,6 +997,9 @@ static const struct mcp25xxfd_config mcp25xxfd_config_0 = {
 	.int_port = DT_INST_GPIO_LABEL(0, int_gpios),
 	.int_thread_stack_size = CONFIG_CAN_MCP25XXFD_INT_THREAD_STACK_SIZE,
 	.int_thread_priority = CONFIG_CAN_MCP25XXFD_INT_THREAD_PRIO,
+
+	.sof_on_clko = DT_INST_PROP(0, sof_on_clko),
+	.clko_div = DT_ENUM_IDX(DT_DRV_INST(0), clko_div),
 
 	.osc_freq = DT_INST_PROP(0, osc_freq),
 	.tq_sjw = DT_INST_PROP(0, sjw),

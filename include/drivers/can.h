@@ -419,7 +419,6 @@ static inline uint8_t can_dlc_to_bytes(uint8_t dlc)
  *
  * @retval The DLC
  */
-
 static inline uint8_t can_bytes_to_dlc(uint8_t num_bytes)
 {
 	return num_bytes <= 8  ? num_bytes :

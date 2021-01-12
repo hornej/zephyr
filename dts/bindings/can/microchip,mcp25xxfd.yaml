@@ -24,3 +24,17 @@ properties:
     reg:
       type: array
       required: true
+    sof-on-clko:
+      type: boolean
+      required: false
+      description: Output SOF signal on CLKO pin
+    clko-div:
+      type: int
+      required: false
+      description: The factor to divide the system clock for CLKO
+      default: 10
+      enum:
+        - 1
+        - 2
+        - 4
+        - 10

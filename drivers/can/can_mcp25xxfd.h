@@ -26,6 +26,7 @@
 #endif
 #define MCP25XXFD_FIFO_LENGTH \
 	MIN(MCP25XXFD_FIFO_MAX / MCP25XXFD_FIFO_ELEMENT_SIZE, 32)
+#define MCP25XXFD_RXF_SIZE (MCP25XXFD_FIFO_LENGTH * MCP25XXFD_FIFO_ELEMENT_SIZE)
 BUILD_ASSERT(MCP25XXFD_FIFO_LENGTH >= 1,
 	     "Cannot fit RX FIFO into MCP25xxFD RAM");
 
@@ -71,18 +72,17 @@ struct mcp25xxfd_data {
 struct mcp25xxfd_config {
 	/* SPI Config */
 	const char *spi_port;
+	uint32_t spi_freq;
+	uint8_t spi_slave;
 	uint8_t spi_cs_pin;
 	uint8_t spi_cs_flags;
 	const char *spi_cs_port;
-	uint32_t spi_freq;
-	uint8_t spi_slave;
 
 	/* Interrupt Config */
 	uint8_t int_pin;
 	const char *int_port;
 	size_t int_thread_stack_size;
 	int int_thread_priority;
-
 	uint32_t osc_freq;
 
 	/* CAN Timing */
@@ -92,6 +92,10 @@ struct mcp25xxfd_config {
 	uint8_t tq_bs2;
 	uint32_t bus_speed;
 	uint16_t sample_point;
+	
+	/* IO Config */
+	bool sof_on_clko;
+	uint8_t clko_div;
 
 #if defined(CONFIG_CAN_FD_MODE)
 	/* CAN-FD Timing */
@@ -423,6 +427,55 @@ union mcp25xxfd_mask {
 	uint8_t byte[4];
 };
 
+#define MCP25XXFD_REG_OSC 0xE00
+union mcp25xxfd_osc {
+	struct {
+		uint32_t PLLEN : 1; /* PLL Enable (0: Clock from XTAL, 1: Clock from 10x PLL) */
+		uint32_t res0 : 1;
+		uint32_t OSCDIS : 1; /* Clock (Oscillator) Disable */
+		uint32_t LPMEN : 1; /* Low Power Mode (LPM) Enable */
+		uint32_t SCLKDIV : 1; /* System Clock Divisor (0: 1/1, 1: 1/2) */
+		uint32_t CLKODIV : 2; /* Clock Output Divisor (0: 1/1, 1: 1/2, 2: 1/4, 3: 1/10) */
+		uint32_t res1 : 1;
+		uint32_t PLLRDY : 1; /* PLL Ready (0: Not Ready, 1: Locked) */
+		uint32_t res2 : 1;
+		uint32_t OSCRDY : 1; /* Clock Ready (0: Not Ready/Off, 1: Running/Stable) */
+		uint32_t res3 : 1;
+		uint32_t SCLKRDY : 1; /* Synchronized SCLKDIV Bit (0: SCLKDIV 0, 1: SCLKDIV 1) */
+		uint32_t res4 : 19;
+	};
+	
+	uint32_t word;
+	uint8_t byte[4];
+};
+
+#define MCP25XXFD_REG_IOCON 0xE04
+union mcp25xxfd_iocon {
+	struct {
+		uint32_t TRIS0 : 1; /* GPIO0 Data Direction (0: Output, 1: Input) */
+		uint32_t TRIS1 : 1; /* GPIO1 Data Direction (0: Output, 1: Input) */
+		uint32_t res0 : 4;
+		uint32_t XSTBYEN : 1; /* Enable Transiever Standby Pin Control */
+		uint32_t res1 : 1;
+		uint32_t LAT0 : 1; /* GPIO0 Latch (0: Low, 1: High) */
+		uint32_t LAT1 : 1; /* GPIO1 Latch (0: Low, 1: High) */
+		uint32_t res2: 6;
+		uint32_t GPIO0 : 1; /* GPIO0 Status (0: < VIL, 1: > VIH) */
+		uint32_t GPIO1 : 1; /* GPIO1 Status (0: < VIL, 1: > VIH) */
+		uint32_t res3: 6;
+		uint32_t PM0 : 1; /* GPIO0 Pin Mode (0: INT0, 1: GPIO0) */
+		uint32_t PM1 : 1; /* GPIO1 Pin Mode (0: INT1, 1: GPIO1) */
+		uint32_t res4: 2;
+		uint32_t TXCANOD: 1; /* TXCAN Drive Mode (0: Push/Pull, 1: Open Drain) */
+		uint32_t SOF: 1; /* Start-Of-Frame Signal (0: Clock on CLKO, 1: SOF on CLKO) */
+		uint32_t INTOD : 1; /* Interrupt Pins Drive Mode (0: Push/Pull, 1: Open Drain) */
+		uint32_t res5 : 1;
+	};
+	
+	uint32_t word;
+	uint8_t byte[4];
+};
+
 /* MCP25XXFD Objects */
 
 struct mcp25xxfd_txobj {
@@ -437,7 +490,7 @@ struct mcp25xxfd_txobj {
 	uint32_t FDF : 1;       /* FD Frame */
 	uint32_t ESI : 1;       /* Error Status Indicator */
 	uint32_t SEQ : 23;
-	uint8_t DATA[0];
+	uint8_t DATA[CAN_MAX_DLEN];
 };
 
 struct mcp25xxfd_rxobj {
@@ -457,7 +510,7 @@ struct mcp25xxfd_rxobj {
 #if defined(CONFIG_CAN_RX_TIMESTAMP)
 	uint32_t RXMSGTS : 32;
 #endif
-	uint8_t DATA[0];
+	uint8_t DATA[CAN_MAX_DLEN];
 };
 
 struct mcp25xxfd_tefobj {
