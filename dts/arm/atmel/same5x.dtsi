@@ -8,6 +8,46 @@
 
 / {
 	soc {
+		can {
+			compatible = "bosch,m-can-base";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			std-filter-elements = <28>;
+			ext-filter-elements = <8>;
+			rx-fifo0-elements = <3>;
+			rx-fifo1-elements = <3>;
+			rx-buffer-elements = <0>;
+			tx-buffer-elements = <3>;
+
+			can0: can@42000000 {
+				compatible = "atmel,sam0-mcan";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x42000000 0xFC>;
+				reg-names = "m_can";
+				clocks = <&gclk 27>, <&mclk 0x10 17>;
+				clock-names = "GCLK", "MCLK";
+				interrupts = <78 0>;
+				interrupt-names = "LINE_0";
+				status = "disabled";
+				label = "CAN_0";
+			};
+			
+			can1: can@42000400 {
+				compatible = "atmel,sam0-mcan";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				reg = <0x42000400 0xFC>;
+				reg-names = "m_can";
+				clocks = <&gclk 28>, <&mclk 0x10 18>;
+				clock-names = "GCLK", "MCLK";
+				interrupts = <79 0>;
+				interrupt-names = "LINE_0";
+				status = "disabled";
+				label = "CAN_1";
+			};
+		};
+
 		gmac: ethernet@42000800 {
 			compatible = "atmel,sam-gmac";
 			reg = <0x42000800 0x400>;
