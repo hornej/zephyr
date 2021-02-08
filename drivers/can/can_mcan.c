@@ -311,7 +311,7 @@ int can_mcan_init(const struct device *dev, const struct can_mcan_config *cfg,
 		}
 	}
 #ifdef CONFIG_CAN_FD_MODE
-	timing_data.sjw = cfg->sjw;
+	timing_data.sjw = cfg->sjw_data;
 	if (cfg->sample_point_data) {
 		ret = can_calc_timing_data(dev, &timing_data,
 					   cfg->bus_speed_data,

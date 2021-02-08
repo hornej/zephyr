@@ -50,7 +50,9 @@ static void can_sam0_isr(const struct device *dev)
 	if ((can->ir & can->ie) & ~can->ils) {
 		/* Line 0 Interrupts */
 		can_mcan_line_0_isr(mcan_cfg, msg_ram, mcan_data);
-	} else if ((can->ir & can->ie) & can->ils) {
+	}
+
+	if ((can->ir & can->ie) & can->ils) {
 		/* Line 1 Interrupts */
 		can_mcan_line_1_isr(mcan_cfg, msg_ram, mcan_data);
 	}
@@ -122,6 +124,13 @@ static int can_sam0_get_core_clock(const struct device *dev, uint32_t *rate)
 	return 0;
 }
 
+static void can_sam0_register_state_change_isr(const struct device *dev,
+					   can_state_change_isr_t isr)
+{
+	struct can_mcan_data *mcan_data = &DEV_DATA(dev)->mcan_data;
+	mcan_data->state_change_isr = isr;
+}
+
 static const struct can_driver_api can_api_funcs = {
 	.set_mode = can_sam0_set_mode,
 	.set_timing = can_sam0_set_timing,
@@ -133,7 +142,7 @@ static const struct can_driver_api can_api_funcs = {
 	.recover = can_mcan_recover,
 #endif
 	.get_core_clock = can_sam0_get_core_clock,
-	.register_state_change_isr = NULL,
+	.register_state_change_isr = can_sam0_register_state_change_isr,
 	.timing_min = { .sjw = 0x7f,
 			.prop_seg = 0x00,
 			.phase_seg1 = 0x01,
@@ -171,16 +180,7 @@ static const struct can_driver_api can_api_funcs = {
 #endif /* CONFIG_CAN_FD_MODE */
 
 #define SAM0_MCAN_INIT(inst)						       \
-	DEVICE_DECLARE(CONCAT(can_sam0_, inst));			       \
-	static void CONCAT(can_sam0_irq_config_, inst)()		       \
-	{								       \
-		IRQ_CONNECT(DT_INST_IRQ_BY_IDX(inst, 0, irq),		       \
-			    DT_INST_IRQ_BY_IDX(inst, 0, priority),	       \
-			    can_sam0_isr, DEVICE_GET(CONCAT(can_sam0_, inst)), \
-			    0);						       \
-		irq_enable(DT_INST_IRQ_BY_IDX(inst, 0, irq));		       \
-	}								       \
-									       \
+	static void CONCAT(can_sam0_irq_config_, inst)(); \
 	struct can_mcan_msg_sram __attribute__((__section__(".can_msg_sram"))) \
 	CONCAT(can_sam0_msg_sram_, inst) __aligned(4);			       \
 	static const struct can_sam0_config CONCAT(can_sam0_cfg_, inst) = {    \
@@ -207,6 +207,14 @@ static const struct can_driver_api can_api_funcs = {
 	DEVICE_DT_INST_DEFINE(0, &can_sam0_init, device_pm_control_nop,	       \
 			      &CONCAT(can_sam0_data_, inst),		       \
 			      &CONCAT(can_sam0_cfg_, inst), POST_KERNEL,       \
-			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &can_api_funcs);
+			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &can_api_funcs);\
+	static void CONCAT(can_sam0_irq_config_, inst)()		       \
+	{								       \
+		IRQ_CONNECT(DT_INST_IRQ_BY_IDX(inst, 0, irq),		       \
+			    DT_INST_IRQ_BY_IDX(inst, 0, priority),	       \
+			    can_sam0_isr, DEVICE_DT_INST_GET(inst), \
+			    0);						       \
+		irq_enable(DT_INST_IRQ_BY_IDX(inst, 0, irq));		       \
+	}								       \
 
 DT_INST_FOREACH_STATUS_OKAY(SAM0_MCAN_INIT)
