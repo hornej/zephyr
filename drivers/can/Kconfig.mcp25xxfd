@@ -10,7 +10,7 @@ config CAN_MCP25XXFD
 	default $(dt_compat_enabled,$(DT_COMPAT_MICROCHIP_MCP25XXFD_CAN))
 	depends on SPI
 	select CAN_AUTO_BUS_OFF_RECOVERY
-	select CAN_FD_MODE
+	select CAN_HAS_CANFD
 	help
 	  Enable MCP25XXFD CAN Driver
 
