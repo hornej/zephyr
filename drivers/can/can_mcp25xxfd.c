@@ -437,19 +437,21 @@ static int mcp25xxfd_send(const struct device *dev,
 		return CAN_TX_ERR;
 	}
 
+	dev_data->mailbox[mailbox_idx].cb = callback;
+	dev_data->mailbox[mailbox_idx].cb_arg = callback_arg;
+
 	mcp25xxfd_zcanframe_to_txobj(msg, &tx_frame);
 	tx_frame.SEQ = mailbox_idx;
-	ret = mcp25xxfd_fifo_write(dev, MCP25XXFD_REG_TXQCON, &tx_frame,
+	ret = mcp25xxfd_fifo_write(dev, MCP25XXFD_REG_FIFOCON(mailbox_idx), &tx_frame,
 				   sizeof(struct mcp25xxfd_txobj));
 
 	if (ret >= 0) {
-		dev_data->mailbox[mailbox_idx].cb = callback;
-		dev_data->mailbox[mailbox_idx].cb_arg = callback_arg;
 		if (callback == NULL) {
 			k_sem_take(&dev_data->mailbox[mailbox_idx].tx_sem,
 				   timeout);
 		}
 	} else {
+		dev_data->mailbox_usage &= BIT(mailbox_idx);
 		k_sem_give(&dev_data->tx_sem);
 	}
 
@@ -501,7 +503,7 @@ static int mcp25xxfd_attach_isr(const struct device *dev,
 		}
 
 		fltcon.FLTEN = 1;
-		fltcon.FLTBP = 1;
+		fltcon.FLTBP = 31;
 		ret = mcp25xxfd_writeb(dev, MCP21518FD_REG_FLTCON(filter_idx),
 				       fltcon.byte);
 		if (ret < 0) {
@@ -617,17 +619,11 @@ static void mcp25xxfd_int_thread(const struct device *dev)
 			ret = mcp25xxfd_read(dev, MCP25XXFD_REG_INTREGS,
 					     &intregs, sizeof(intregs));
 			if (ret < 0) {
-				LOG_ERR("Failed to read register [%d]", ret);
 				continue;
 			}
 
 			if (intregs.ints.RXIF) {
-				for (int i = 0; i < 32; i++) {
-					if (!(intregs.rxif & BIT(i))) {
-						continue;
-					}
-					mcp25xxfd_rx(dev, i);
-				}
+				mcp25xxfd_rx(dev, 31);
 			}
 
 			if (intregs.ints.TEFIF) {
@@ -865,7 +861,7 @@ static int mcp25xxfd_init(const struct device *dev)
 	union mcp25xxfd_iocon iocon;
 	union mcp25xxfd_osc osc;
 	union mcp25xxfd_fifocon tefcon = { .word = 0x00000400 };
-	union mcp25xxfd_fifocon txqcon = { .word = 0x00600400 };
+	union mcp25xxfd_fifocon txfifocon = { .word = 0x00600400 };
 	union mcp25xxfd_fifocon fifocon = { .word = 0x00600400 };
 
 	ret = mcp25xxfd_readw(dev, MCP25XXFD_REG_CON, &con);
@@ -884,7 +880,7 @@ static int mcp25xxfd_init(const struct device *dev)
 	con.STEF = 1;
 	con.SERR2LOM = 0;
 	con.ESIGM = 0;
-	con.RTXAT = 1;
+	con.RTXAT = 0;
 	con.BRSDIS = 0;
 	con.BUSY = 0;
 	con.WFT = MCP25XXFD_WFT_T11FILTER;
@@ -938,30 +934,31 @@ static int mcp25xxfd_init(const struct device *dev)
 		goto done;
 	}
 
-	txqcon.PLSIZE = can_bytes_to_dlc(MCP25XXFD_PAYLOAD_SIZE) - 8;
-	txqcon.FSIZE = CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE - 1;
-	txqcon.TXPRI = 1;
-	txqcon.TXAT = 0b01;
-	txqcon.TXATIE = 1;
-	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_TXQCON, &txqcon);
-	if (ret < 0) {
-		goto done;
+	txfifocon.PLSIZE = can_bytes_to_dlc(MCP25XXFD_PAYLOAD_SIZE) - 8;
+	txfifocon.FSIZE = 0;
+	txfifocon.TXPRI = 0;
+	txfifocon.TXEN = 1;
+	for (int i = 0; i < CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE; i++) {
+		ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_FIFOCON(i), &txfifocon);
+		if (ret < 0) {
+			goto done;
+		}
 	}
 
 	fifocon.PLSIZE = can_bytes_to_dlc(MCP25XXFD_PAYLOAD_SIZE) - 8;
-	fifocon.FSIZE = MCP25XXFD_FIFO_LENGTH - 1;
+	fifocon.FSIZE = MCP25XXFD_RXFIFO_LENGTH - 1;
 #if defined(CONFIG_CAN_RX_TIMESTAMP)
 	fifocon.TSEN = 1;
 #endif
 	fifocon.FNEIE = 1;
-	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_FIFOCON(1), &fifocon);
+	ret = mcp25xxfd_writew(dev, MCP25XXFD_REG_FIFOCON(31), &fifocon);
 	if (ret < 0) {
 		goto done;
 	}
 
-	LOG_DBG("TEF/TXQ: %d elements", CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE);
-	LOG_DBG("RX FIFO: %ld elements", MCP25XXFD_FIFO_LENGTH);
-	LOG_DBG("%ldb of %db RAM Allocated", MCP25XXFD_TEF_SIZE + MCP25XXFD_TXQ_SIZE + MCP25XXFD_RXF_SIZE, MCP25XXFD_RAM_SIZE);
+	LOG_DBG("%d TX FIFOS: 1 element", CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE);
+	LOG_DBG("1 RX FIFO: %ld elements", MCP25XXFD_RXFIFO_LENGTH);
+	LOG_DBG("%ldb of %db RAM Allocated", MCP25XXFD_TEF_SIZE + MCP25XXFD_TXFIFOS_SIZE + MCP25XXFD_RXFIFO_SIZE, MCP25XXFD_RAM_SIZE);
 
 done:
 	k_mutex_unlock(&dev_data->mutex);

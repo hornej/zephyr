@@ -14,20 +14,24 @@
 
 #define MCP25XXFD_RAM_SIZE 2048
 #define MCP25XXFD_PAYLOAD_SIZE CLAMP(ROUND_UP(CAN_MAX_DLEN, 4), 8, 64)
-#define MCP25XXFD_TEF_SIZE (CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE * (0 + 8))
-#define MCP25XXFD_TXQ_SIZE \
-	(CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE * (8 + MCP25XXFD_PAYLOAD_SIZE))
-#define MCP25XXFD_FIFO_MAX \
-	((MCP25XXFD_RAM_SIZE - (MCP25XXFD_TEF_SIZE + MCP25XXFD_TXQ_SIZE)))
-#if defined(CONFIG_CAN_RX_TIMESTAMP)
-#define MCP25XXFD_FIFO_ELEMENT_SIZE (4 + 8 + MCP25XXFD_PAYLOAD_SIZE)
+#if defined(CONFIG_CAN_TX_TIMESTAMP)
+/* Note: This will be implemented with a future can_send overhaul */
+#define MCP25XXFD_TEF_SIZE (CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE * (4 + 8))
 #else
-#define MCP25XXFD_FIFO_ELEMENT_SIZE (0 + 8 + MCP25XXFD_PAYLOAD_SIZE)
+#define MCP25XXFD_TEF_SIZE (CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE * (0 + 8))
 #endif
-#define MCP25XXFD_FIFO_LENGTH \
-	MIN(MCP25XXFD_FIFO_MAX / MCP25XXFD_FIFO_ELEMENT_SIZE, 32)
-#define MCP25XXFD_RXF_SIZE (MCP25XXFD_FIFO_LENGTH * MCP25XXFD_FIFO_ELEMENT_SIZE)
-BUILD_ASSERT(MCP25XXFD_FIFO_LENGTH >= 1,
+#define MCP25XXFD_TXFIFOS_SIZE (CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE * (8 + MCP25XXFD_PAYLOAD_SIZE))
+#define MCP25XXFD_RXFIFO_MAX \
+	((MCP25XXFD_RAM_SIZE - (MCP25XXFD_TEF_SIZE + MCP25XXFD_TXFIFOS_SIZE)))
+#if defined(CONFIG_CAN_RX_TIMESTAMP)
+#define MCP25XXFD_RXFIFO_ELEMENT_SIZE (4 + 8 + MCP25XXFD_PAYLOAD_SIZE)
+#else
+#define MCP25XXFD_RXFIFO_ELEMENT_SIZE (0 + 8 + MCP25XXFD_PAYLOAD_SIZE)
+#endif
+#define MCP25XXFD_RXFIFO_LENGTH \
+	MIN(MCP25XXFD_RXFIFO_MAX / MCP25XXFD_RXFIFO_ELEMENT_SIZE, 32)
+#define MCP25XXFD_RXFIFO_SIZE (MCP25XXFD_RXFIFO_LENGTH * MCP25XXFD_RXFIFO_ELEMENT_SIZE)
+BUILD_ASSERT(MCP25XXFD_RXFIFO_LENGTH >= 1,
 	     "Cannot fit RX FIFO into MCP25xxFD RAM");
 
 struct mcp25xxfd_mailbox {
@@ -238,7 +242,7 @@ union mcp25xxfd_vec {
 #define MCP25XXFD_REG_INT 0x01C
 union mcp25xxfd_int {
 	struct {
-		uint32_t TXIF : 1;      /*  Transmit FIFO Interrupt Flag */
+		uint32_t TXIF : 1;      /* Transmit FIFO Interrupt Flag */
 		uint32_t RXIF : 1;      /* Receive FIFO Interrupt Flag */
 		uint32_t TCBIF : 1;     /* Time Base Counter Interrupt Flag */
 		uint32_t MODIF : 1;     /* Mode Change Interrupt Flag */
@@ -252,7 +256,7 @@ union mcp25xxfd_int {
 		uint32_t CERRIF : 1;    /* CAN Bus Error Interrupt Flag */
 		uint32_t WAKIF : 1;     /* Bus Wake Up Interrupt Flag */
 		uint32_t IVMIF : 1;     /* Invalid Message Interrupt Flag */
-		uint32_t TXIE : 1;      /*  Transmit FIFO Interrupt Enable */
+		uint32_t TXIE : 1;      /* Transmit FIFO Interrupt Enable */
 		uint32_t RXIE : 1;      /* Receive FIFO Interrupt Enable */
 		uint32_t TBCIE : 1;     /* Time Base Counter Interrupt Enable */
 		uint32_t MODIE : 1;     /* Mode Change Interrupt Enable */

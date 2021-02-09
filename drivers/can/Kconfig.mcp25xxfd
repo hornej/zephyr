@@ -19,10 +19,10 @@ if CAN_MCP25XXFD
 config CAN_MCP25XXFD_MAX_TX_QUEUE
 	int "Maximum number of queued messages"
 	default 4
-	range 1 32
+	range 1 31
 	help
 		Defines the array size of transmit callback pointers and semaphores,
-		as well as the length of the TX Queue on the MCP25XXFD.
+		as well as the number of TX FIFOs allocated on the MCP25XXFD.
 
 config CAN_MCP25XXFD_INT_THREAD_STACK_SIZE
 	int "Stack size for interrupt handler"
