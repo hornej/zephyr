@@ -643,6 +643,22 @@ static void mcp25xxfd_int_thread(const struct device *dev)
 
 					if (trec.TXBO) {
 						new_state = CAN_BUS_OFF;
+
+						/* Upon entering bus-off, all the fifos are reset. */
+						LOG_DBG("All FIFOs Reset");
+						k_mutex_lock(&dev_data->mutex, K_FOREVER);
+						for (int i = 0; i < CONFIG_CAN_MCP25XXFD_MAX_TX_QUEUE; i++) {
+							k_sem_give(&dev_data->tx_sem);
+							if (!(dev_data->mailbox_usage & BIT(i))) continue;
+							if (dev_data->mailbox[i].cb == NULL) {
+								k_sem_give(&dev_data->mailbox[i].tx_sem);
+							} else {
+								dev_data->mailbox[i].cb(
+									CAN_TX_BUS_OFF, dev_data->mailbox[i].cb_arg);
+							}
+						}
+						dev_data->mailbox_usage = 0;
+						k_mutex_unlock(&dev_data->mutex);
 					} else if (trec.TXBP || trec.RXBP) {
 						new_state = CAN_ERROR_PASSIVE;
 					} else {
