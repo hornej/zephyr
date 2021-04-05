@@ -28,14 +28,6 @@
  * PCI     Process Control Information
  */
 
-/* This is for future use when we have CAN-FD */
-#ifdef ISOTP_USE_CAN_FD
-/* #define ISOTP_CAN_DL CONFIG_ISOTP_TX_DL* */
-#define ISOTP_CAN_DL 8
-#else
-#define ISOTP_CAN_DL 8
-#endif/*ISOTP_USE_CAN_FD*/
-
 /* Protocol control information*/
 #define ISOTP_PCI_SF 0x00 /* Single frame*/
 #define ISOTP_PCI_FF 0x01 /* First frame */
@@ -116,6 +108,28 @@ struct isotp_global_ctx {
 	sys_slist_t alloc_list;
 	sys_slist_t ff_sf_alloc_list;
 };
+
+static inline uint8_t isotp_max_dlc(uint8_t fd_mode) {
+#ifdef CONFIG_CAN_FD_MODE
+	if (fd_mode) {
+		return can_bytes_to_dlc(CAN_MAX_DLEN);
+	} else
+#endif
+	{
+		return 8;
+	}
+}
+
+static inline size_t isotp_max_len(const struct isotp_msg_id *tx_addr) {
+#ifdef CONFIG_CAN_FD_MODE
+	if (tx_addr->fd) {
+		return CAN_MAX_DLEN;
+	} else
+#endif
+	{
+		return 8;
+	}
+}
 
 #ifdef __cplusplus
 }

@@ -152,6 +152,12 @@ struct isotp_msg_id {
 	uint8_t use_ext_addr : 1;
 	/** Indicates if ISO-TP fixed addressing (acc. to SAE J1939) is used */
 	uint8_t use_fixed_addr : 1;
+#if defined(CONFIG_CAN_FD_MODE)
+	/** Indicates if FD mode is used **/
+	uint8_t fd : 1;
+	/** Indicates if Bit Rate Switching is used **/
+	uint8_t brs : 1;
+#endif
 };
 
 /*
