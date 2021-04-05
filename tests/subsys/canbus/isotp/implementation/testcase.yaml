@@ -1,4 +1,14 @@
 tests:
-  can.isotp.implemmentation:
+  can.isotp.implementation:
     tags: can isotp
     depends_on: can
+    extra_configs:
+      - CONFIG_CAN_FD_MODE=n          # CAN-FD must be forced off for this test
+  can.isotp.implementation.fd64:
+    tags: can canfd isotp
+    depends_on: canfd
+    extra_configs:
+      - CONFIG_CAN_FD_MODE=y
+      - CONFIG_CAN_MAX_DLEN=64
+      - CONFIG_ISOTP_RX_BUF_COUNT=8
+      - CONFIG_ISOTP_RX_BUF_SIZE=126

@@ -44,17 +44,25 @@ const struct isotp_fc_opts fc_opts_single = {
 const struct isotp_msg_id rx_addr = {
 	.std_id = 0x10,
 	.id_type = CAN_STANDARD_IDENTIFIER,
-	.use_ext_addr = 0
+	.use_ext_addr = 0,
+#if defined(CONFIG_CAN_FD_MODE)
+	.fd = 1,
+	.brs = 1,
+#endif
 };
 const struct isotp_msg_id tx_addr = {
 	.std_id = 0x11,
 	.id_type = CAN_STANDARD_IDENTIFIER,
-	.use_ext_addr = 0
+	.use_ext_addr = 0,
+#if defined(CONFIG_CAN_FD_MODE)
+	.fd = 1,
+	.brs = 1,
+#endif
 };
 
 struct isotp_recv_ctx recv_ctx;
 struct isotp_send_ctx send_ctx;
-uint8_t data_buf[128];
+uint8_t data_buf[1024];
 
 void send_complette_cb(int error_nr, void *arg)
 {
@@ -142,22 +150,25 @@ static void receive_test_data_net(struct isotp_recv_ctx *recv_ctx,
 	int remaining_len;
 	size_t received_len = 0;
 	const uint8_t *data_ptr = data;
-	struct net_buf *buf;
+	struct net_buf *buf, *frag;
 
 	do {
 		remaining_len = isotp_recv_net(recv_ctx, &buf, K_MSEC(1000));
 		zassert_true(remaining_len >= 0, "recv error: %d",
 			     remaining_len);
-		received_len += buf->len;
+		received_len += net_buf_frags_len(buf);
 		zassert_equal(received_len + remaining_len, len,
 			      "Length missmatch");
 
-		data_ptr = check_frag(buf, data_ptr);
+		frag = buf;
+		do {
+			data_ptr = check_frag(frag, data_ptr);
+			memset(frag->data, 0, frag->len);
+		} while ((frag = frag->frags));
 
 		if (delay) {
 			k_msleep(delay);
 		}
-		memset(buf->data, 0, buf->len);
 		net_buf_unref(buf);
 	} while (remaining_len);
 
