@@ -1,0 +1,12 @@
+description: Bosch m_can CAN-FD controller
+
+compatible: "atmel,sam0-mcan"
+
+include: bosch-mcan.yaml
+
+properties:
+    clocks:
+      required: true
+
+    clock-names:
+      required: true
